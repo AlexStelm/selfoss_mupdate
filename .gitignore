@@ -1,4 +1,6 @@
 *.swp
 *.o
 build/lib*
+build/install/*
 dl/lib*
+src/selfoss_mupdate
