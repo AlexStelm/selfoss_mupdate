@@ -99,7 +99,13 @@ int sanitize_content(char **content)
 	tidyBufInit(&errbuf);
 	tidyBufInit(&outbuf);
 
-	rc = tidyOptSetBool(tdoc, TidyXhtmlOut, no);
+	rc = tidyOptSetBool(tdoc, TidyXhtmlOut, yes);
+	if (rc >= 0)
+		rc = tidyOptSetInt(tdoc, TidyBodyOnly, yes);
+	if (rc >= 0)
+		rc = tidyOptSetBool(tdoc, TidyOmitOptionalTags, yes);
+	if (rc >= 0)
+		rc = tidyOptSetBool(tdoc, TidyMakeClean, yes);
 	if (rc >= 0)
 		rc = tidySetErrorBuffer(tdoc, &errbuf);
 	if (rc >= 0)
@@ -120,12 +126,14 @@ int sanitize_content(char **content)
 
 	if (rc >= 0) {
 		if (rc > 0)
-			debug("errbuf: %s", errbuf.bp);
+			debug("errbuf len=%u:\n"
+				"--------------------------------\n"
+				"%s--------------------------------", errbuf.size, errbuf.bp);
 
-		debug("source: len=%d\n%s", strlen(*content), *content);
-		debug("-------------------------------");
-		debug("result: len=%d (sz=%d)\n%s", strlen(outbuf.bp), outbuf.size, outbuf.bp);
-		debug("-------------------------------");
+		debug("source: len=%zu\n%s", strlen(*content), *content);
+		debug("--------------------------------");
+		debug("result: len=%zu (sz=%u)\n%s", strlen(outbuf.bp), outbuf.size, outbuf.bp);
+		debug("--------------------------------");
 
 		char *p = *content;
 		*content = outbuf.bp;
@@ -297,13 +305,16 @@ int fetch_feed(char *feed_url)
 		}
 
 		rc = sanitize_content(&rssitem->description);
-
 		if (rc > 1)
-			debug("sanitize with errors (rc=%d)", rc);
+			fprintf(stderr, "sanitize_content('%s') errors! rc=%d",
+					rssitem->title, rc);
 		else if (rc >= 0)
 			debug("sanitize ok");
-		else
-			debug("danitize fail!");
+		else {
+			fprintf(stderr, "sanitize_content('%s') failed! skip item",
+					rssitem->title);
+			continue;
+		}
 
 
 	}
