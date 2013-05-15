@@ -29,9 +29,10 @@
 #include <errno.h>
 #include <err.h>
 
+
 #ifndef _NDEBUG
 
-int __debug_level;
+extern int __debug_level;
 #define debug(fmt, ...)		if (__debug_level > 0) fprintf(stderr, "%s.%03d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
 #define debug2(fmt, ...)	if (__debug_level > 1) fprintf(stderr, "%s.%03d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
 #define debug3(fmt, ...)	if (__debug_level > 2) fprintf(stderr, "%s.%03d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
