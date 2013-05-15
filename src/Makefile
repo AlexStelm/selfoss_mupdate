@@ -3,7 +3,7 @@
 
 TOP_DIR := $(shell cd .. && pwd)
 
-CFLAGS = -std=gnu99 -I$(TOP_DIR)/build/install/opt/include \
+CFLAGS = -std=gnu99 -g -ggdb -I$(TOP_DIR)/build/install/opt/include \
 	 -L$(TOP_DIR)/build
 
 LIBS_a := $(TOP_DIR)/build/libmrss.a \

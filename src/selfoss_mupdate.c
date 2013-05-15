@@ -24,10 +24,12 @@
 #include <iconv.h>
 #include <errno.h>
 #include <err.h>
+#include <time.h>
 
 #include "nxml.h"
 #include "mrss.h"
 #include "tidy.h"
+#include "buffio.h"
 #include "bb_md5_sha.h"
 
 #define SELFOSS_VERSION		"2.7"
@@ -40,7 +42,7 @@ bool __debug_enable = true;
 
 #define IDSIZE			255
 
-/* -*- Feed reader -*- */
+/* -*- content preparation -*- */
 
 void iconv_replace(iconv_t cd, char **field)
 {
@@ -80,6 +82,64 @@ void iconv_replace(iconv_t cd, char **field)
 	free(*field);
 	*field = buf;
 }
+
+void sanitize_drop(char **field)
+{
+}
+
+int sanitize_content(char **content)
+{
+	int rc;
+	TidyDoc tdoc;
+	TidyBuffer errbuf;
+	TidyBuffer outbuf;
+
+	/* tidy doc */
+	tdoc = tidyCreate();
+	tidyBufInit(&errbuf);
+	tidyBufInit(&outbuf);
+
+	rc = tidyOptSetBool(tdoc, TidyXhtmlOut, no);
+	if (rc >= 0)
+		rc = tidySetErrorBuffer(tdoc, &errbuf);
+	if (rc >= 0)
+		rc = tidySetCharEncoding(tdoc, "utf8");
+	if (rc >= 0)
+		rc = tidyParseString(tdoc, *content);
+	if (rc >= 0)
+		rc = tidyCleanAndRepair(tdoc);
+	if (rc >= 0)
+		rc = tidyRunDiagnostics(tdoc);
+	if (rc > 1) {
+		/* warnings */
+		debug("ugh errors! force output. rc=%d", rc);
+		rc = tidyOptSetBool(tdoc, TidyForceOutput, yes) ? rc : -1;
+	}
+	if (rc >= 0)
+		rc = tidySaveBuffer(tdoc, &outbuf);
+
+	if (rc >= 0) {
+		if (rc > 0)
+			debug("errbuf: %s", errbuf.bp);
+
+		debug("source: len=%d\n%s", strlen(*content), *content);
+		debug("-------------------------------");
+		debug("result: len=%d (sz=%d)\n%s", strlen(outbuf.bp), outbuf.size, outbuf.bp);
+		debug("-------------------------------");
+
+		char *p = *content;
+		*content = outbuf.bp;
+		outbuf.bp = p;
+	}
+
+	tidyBufFree(&errbuf);
+	tidyBufFree(&outbuf);
+	tidyRelease(tdoc);
+
+	return rc;
+}
+
+/* -*- Feed process -*- */
 
 size_t simplepie_get_id(mrss_t *rss, mrss_item_t *item, char *buf, size_t sz)
 {
@@ -138,13 +198,15 @@ size_t selfoss_getId(mrss_t *rss, mrss_item_t *item, char *buf_256)
 	return sz;
 }
 
-int parse_feed(char *feed_url)
+int fetch_feed(char *feed_url)
 {
 	mrss_t *rssdata;
 	mrss_error_t mret;
 	mrss_item_t *rssitem;
 	CURLcode ccode;
 	iconv_t iconv_cd;
+	time_t item_time;
+	struct tm item_tm;
 
 	if (!strncmp(feed_url, "http://", 7) || !strncmp(feed_url, "https://", 8))
 		mret = mrss_parse_url_with_options_and_error(feed_url, &rssdata, NULL, &ccode);
@@ -182,6 +244,12 @@ int parse_feed(char *feed_url)
 	iconv_replace(iconv_cd, &rssdata->image_link);
 	iconv_replace(iconv_cd, &rssdata->image_description);
 
+	item_time = time(NULL);
+	gmtime_r(&item_time, &item_tm);
+	if (rssdata->pubDate != NULL) {
+		strptime(rssdata->pubDate, "%a, %d %b %Y %H:%M:%S %z", &item_tm);
+	}
+
 	debug("Generic:");
 	debug("\tfile url: %s", rssdata->file);
 	debug("\tencoding: %s", rssdata->encoding);
@@ -200,17 +268,15 @@ int parse_feed(char *feed_url)
 	debug("\tW x H: %d x %d", rssdata->image_width, rssdata->image_height);
 
 	debug("Items:");
-	rssitem = rssdata->item;
-	while (rssitem) {
+	for (rssitem = rssdata->item; rssitem != NULL; rssitem = rssitem->next) {
 		char uid_buf[IDSIZE + 1];
+		int rc;
 
 		iconv_replace(iconv_cd, &rssitem->title);
 		iconv_replace(iconv_cd, &rssitem->description);
 		iconv_replace(iconv_cd, &rssitem->link);
 		iconv_replace(iconv_cd, &rssitem->guid);
 		iconv_replace(iconv_cd, &rssitem->enclosure_url);
-
-		selfoss_getId(rssdata, rssitem, uid_buf);
 
 		debug("\tItem %p:", rssitem);
 		debug("\t\ttitle: %s", rssitem->title);
@@ -220,9 +286,26 @@ int parse_feed(char *feed_url)
 		debug("\t\tenclosure_url: %s", rssitem->enclosure_url);
 		debug("\t\tpub date: %s", rssitem->pubDate);
 
-		debug("\t\t\tUID: %s", uid_buf);
+		selfoss_getId(rssdata, rssitem, uid_buf);
+		/* check zero: SELECT count(*) FROM items WHERE uid=:uid */
+		/* continue */
 
-		rssitem = rssitem->next;
+		/* prepare to insert */
+
+		if (rssitem->pubDate != NULL) {
+			strptime(rssitem->pubDate, "%a, %d %b %Y %H:%M:%S %z", &item_tm);
+		}
+
+		rc = sanitize_content(&rssitem->description);
+
+		if (rc > 1)
+			debug("sanitize with errors (rc=%d)", rc);
+		else if (rc >= 0)
+			debug("sanitize ok");
+		else
+			debug("danitize fail!");
+
+
 	}
 
 	iconv_close(iconv_cd);
@@ -253,7 +336,7 @@ int main(int argc, char *argv[])
 	if (argc != 2) usage(argv[0]);
 	//version(argv[0]);
 
-	parse_feed(argv[1]);
+	fetch_feed(argv[1]);
 
 	return 0;
 }
