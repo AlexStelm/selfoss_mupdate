@@ -17,34 +17,25 @@
  *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
+#include "selfoss_mupdate.h"
 #include <iconv.h>
-#include <errno.h>
-#include <err.h>
 #include <time.h>
 
 #include "nxml.h"
 #include "mrss.h"
-#include "tidy.h"
-#include "buffio.h"
 #include "bb_md5_sha.h"
+
 
 #define SELFOSS_VERSION		"2.7"
 #define MY_VERSION		"0.1"
 
-bool __debug_enable = true;
-#define debug(fmt, ...)		if (__debug_enable) fprintf(stderr, "%s: " fmt "\n", __func__, ##__VA_ARGS__)
-#define debug2(fmt, ...)
-#define debug3(fmt, ...)
+int __debug_level = 1;
 
 #define IDSIZE			255
 
 /* -*- content preparation -*- */
 
-void iconv_replace(iconv_t cd, char **field)
+static void iconv_replace(iconv_t cd, char **field)
 {
 	char *in, *out, *buf;
 	size_t in_sz, out_sz;
@@ -59,7 +50,7 @@ void iconv_replace(iconv_t cd, char **field)
 	//out_sz = _out_sz = (in_sz <= PAGE/2) ? PAGE : in_sz * 2;
 	out_sz = _out_sz = in_sz * 2;
 
-	debug3("1: in_sz=%zu, out_sz=%zu", in_sz, out_sz);
+	debug3("in_sz=%zu, out_sz=%zu", in_sz, out_sz);
 
 	if ((buf = calloc(out_sz, 1)) == NULL)
 		err(1, "out of memory\n");
@@ -76,106 +67,42 @@ void iconv_replace(iconv_t cd, char **field)
 		err(1, "iconv()");
 	}
 
-	debug3("2. in_sz=%zu, out_sz=%zu, ret_sz=%zu, out/in=%zu",
+	debug3("in_sz=%zu, out_sz=%zu, ret_sz=%zu, out/in=%zu",
 			in_sz, out_sz, ret_sz, out_sz / in_sz);
 
 	free(*field);
 	*field = buf;
 }
 
-void sanitize_drop(char **field)
-{
-}
-
-int sanitize_content(char **content)
-{
-	int rc;
-	TidyDoc tdoc;
-	TidyBuffer errbuf;
-	TidyBuffer outbuf;
-
-	/* tidy doc */
-	tdoc = tidyCreate();
-	tidyBufInit(&errbuf);
-	tidyBufInit(&outbuf);
-
-	rc = tidyOptSetBool(tdoc, TidyXhtmlOut, yes);
-	if (rc >= 0)
-		rc = tidyOptSetInt(tdoc, TidyBodyOnly, yes);
-	if (rc >= 0)
-		rc = tidyOptSetBool(tdoc, TidyOmitOptionalTags, yes);
-	if (rc >= 0)
-		rc = tidyOptSetBool(tdoc, TidyMakeClean, yes);
-	if (rc >= 0)
-		rc = tidySetErrorBuffer(tdoc, &errbuf);
-	if (rc >= 0)
-		rc = tidySetCharEncoding(tdoc, "utf8");
-	if (rc >= 0)
-		rc = tidyParseString(tdoc, *content);
-	if (rc >= 0)
-		rc = tidyCleanAndRepair(tdoc);
-	if (rc >= 0)
-		rc = tidyRunDiagnostics(tdoc);
-	if (rc > 1) {
-		/* warnings */
-		debug("ugh errors! force output. rc=%d", rc);
-		rc = tidyOptSetBool(tdoc, TidyForceOutput, yes) ? rc : -1;
-	}
-	if (rc >= 0)
-		rc = tidySaveBuffer(tdoc, &outbuf);
-
-	if (rc >= 0) {
-		if (rc > 0)
-			debug("errbuf len=%u:\n"
-				"--------------------------------\n"
-				"%s--------------------------------", errbuf.size, errbuf.bp);
-
-		debug("source: len=%zu\n%s", strlen(*content), *content);
-		debug("--------------------------------");
-		debug("result: len=%zu (sz=%u)\n%s", strlen(outbuf.bp), outbuf.size, outbuf.bp);
-		debug("--------------------------------");
-
-		char *p = *content;
-		*content = outbuf.bp;
-		outbuf.bp = p;
-	}
-
-	tidyBufFree(&errbuf);
-	tidyBufFree(&outbuf);
-	tidyRelease(tdoc);
-
-	return rc;
-}
-
 /* -*- Feed process -*- */
 
-size_t simplepie_get_id(mrss_t *rss, mrss_item_t *item, char *buf, size_t sz)
+static size_t simplepie_get_id(mrss_t *rss, mrss_item_t *item, char *buf, size_t sz)
 {
 	if (item->guid != NULL) {
 		strncpy(buf, item->guid, sz - 1);
-		debug("choose guid%s: %s", (item->guid_isPermaLink) ? " [permalink]" : "", item->guid);
+		debug2("choose guid%s: %s", (item->guid_isPermaLink) ? " [permalink]" : "", item->guid);
 	}
 	else if (item->link != NULL) {
 		strncpy(buf, item->link, sz - 1);
-		debug("choose link: %s", item->link);
+		debug2("choose link: %s", item->link);
 	}
 	else if (item->enclosure_url != NULL) {
 		strncpy(buf, item->enclosure_url, sz - 1);
-		debug("choose encloseure url: %s", item->enclosure_url);
+		debug2("choose encloseure url: %s", item->enclosure_url);
 	}
 	else if (item->title != NULL) {
 		strncpy(buf, item->title, sz - 1);
-		debug("choose title: %s", item->title);
+		debug2("choose title: %s", item->title);
 	}
 	else {
-		debug("BUG!");
+		fprintf(stderr, "%s BUG\n", __func__);
 		return 0;
 	}
 
 	return strnlen(buf, sz);
 }
 
-size_t selfoss_getId(mrss_t *rss, mrss_item_t *item, char *buf_256)
+static size_t selfoss_getId(mrss_t *rss, mrss_item_t *item, char *buf_256)
 {
 	char sp_buf[4096];
 	size_t sz;
@@ -206,7 +133,7 @@ size_t selfoss_getId(mrss_t *rss, mrss_item_t *item, char *buf_256)
 	return sz;
 }
 
-int fetch_feed(char *feed_url)
+static int fetch_feed(char *feed_url)
 {
 	mrss_t *rssdata;
 	mrss_error_t mret;
@@ -215,6 +142,7 @@ int fetch_feed(char *feed_url)
 	iconv_t iconv_cd;
 	time_t item_time;
 	struct tm item_tm;
+	size_t n;
 
 	if (!strncmp(feed_url, "http://", 7) || !strncmp(feed_url, "https://", 8))
 		mret = mrss_parse_url_with_options_and_error(feed_url, &rssdata, NULL, &ccode);
@@ -254,9 +182,8 @@ int fetch_feed(char *feed_url)
 
 	item_time = time(NULL);
 	gmtime_r(&item_time, &item_tm);
-	if (rssdata->pubDate != NULL) {
+	if (rssdata->pubDate != NULL)
 		strptime(rssdata->pubDate, "%a, %d %b %Y %H:%M:%S %z", &item_tm);
-	}
 
 	debug("Generic:");
 	debug("\tfile url: %s", rssdata->file);
@@ -276,7 +203,10 @@ int fetch_feed(char *feed_url)
 	debug("\tW x H: %d x %d", rssdata->image_width, rssdata->image_height);
 
 	debug("Items:");
-	for (rssitem = rssdata->item; rssitem != NULL; rssitem = rssitem->next) {
+	for (rssitem = rssdata->item, n = 0;
+		rssitem != NULL;
+		rssitem = rssitem->next, n++) {
+
 		char uid_buf[IDSIZE + 1];
 		int rc;
 
@@ -286,7 +216,7 @@ int fetch_feed(char *feed_url)
 		iconv_replace(iconv_cd, &rssitem->guid);
 		iconv_replace(iconv_cd, &rssitem->enclosure_url);
 
-		debug("\tItem %p:", rssitem);
+		debug("\tItem %zu:", n);
 		debug("\t\ttitle: %s", rssitem->title);
 		debug("\t\tdescription: %s", rssitem->description);
 		debug("\t\tlink: %s", rssitem->link);
@@ -298,21 +228,18 @@ int fetch_feed(char *feed_url)
 		/* check zero: SELECT count(*) FROM items WHERE uid=:uid */
 		/* continue */
 
-		/* prepare to insert */
-
-		if (rssitem->pubDate != NULL) {
+		if (rssitem->pubDate != NULL)
 			strptime(rssitem->pubDate, "%a, %d %b %Y %H:%M:%S %z", &item_tm);
-		}
 
 		rc = sanitize_content(&rssitem->description);
 		if (rc > 1)
-			fprintf(stderr, "sanitize_content('%s') errors! rc=%d",
-					rssitem->title, rc);
+			fprintf(stderr, "content sanitized with errors! item #%zu '%s' (rc=%d)",
+					n, rssitem->title, rc);
 		else if (rc >= 0)
-			debug("sanitize ok");
+			debug("sanitize ok #%zu '%s'", n, rssitem->title);
 		else {
-			fprintf(stderr, "sanitize_content('%s') failed! skip item",
-					rssitem->title);
+			fprintf(stderr, "content sanitization failed! skip item #%zu '%s'",
+					n, rssitem->title);
 			continue;
 		}
 
@@ -327,13 +254,13 @@ int fetch_feed(char *feed_url)
 
 /* -*- Main -*- */
 
-void usage(char *argv0)
+static void usage(char *argv0)
 {
 	fprintf(stderr, "Usage: %s <rss link>\n", argv0);
 	exit(1);
 }
 
-void version(char *argv0)
+static void version(char *argv0)
 {
 	fprintf(stdout, "%s %s\n", argv0, MY_VERSION);
 	fprintf(stdout, "Compatible with selfoss version: %s\n\n", SELFOSS_VERSION);

@@ -13,7 +13,8 @@ LIBS_a := $(TOP_DIR)/build/libmrss.a \
 LIBS := -lmrss -lnxml -lcurl -ltidy
 
 OBJS := selfoss_mupdate.o \
-	hash_md5_sha.o
+	hash_md5_sha.o \
+	sanitize.o
 
 selfoss_mupdate: $(OBJS) $(LIBS_a)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
