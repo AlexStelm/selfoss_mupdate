@@ -29,7 +29,7 @@
 #define SELFOSS_VERSION		"2.7"
 #define MY_VERSION		"0.1"
 
-int __debug_level = 1;
+int __debug_level = 3;
 
 #define IDSIZE			255
 
@@ -47,10 +47,7 @@ static void iconv_replace(iconv_t cd, char **field)
 	in_sz = _in_sz = strlen(*field);
 
 	/* NOTE: optimization for cp1251/koi8-r -> utf-8 */
-	//out_sz = _out_sz = (in_sz <= PAGE/2) ? PAGE : in_sz * 2;
 	out_sz = _out_sz = in_sz * 2;
-
-	debug3("in_sz=%zu, out_sz=%zu", in_sz, out_sz);
 
 	if ((buf = calloc(out_sz, 1)) == NULL)
 		err(1, "out of memory\n");
@@ -66,9 +63,6 @@ static void iconv_replace(iconv_t cd, char **field)
 
 		err(1, "iconv()");
 	}
-
-	debug3("in_sz=%zu, out_sz=%zu, ret_sz=%zu, out/in=%zu",
-			in_sz, out_sz, ret_sz, out_sz / in_sz);
 
 	free(*field);
 	*field = buf;
@@ -188,19 +182,19 @@ static int fetch_feed(char *feed_url)
 	debug("Generic:");
 	debug("\tfile url: %s", rssdata->file);
 	debug("\tencoding: %s", rssdata->encoding);
-	debug("\tsize: %zu", rssdata->size);
-	debug("\ttype: %d", rssdata->version);
+	debug2("\tsize: %zu", rssdata->size);
+	debug2("\ttype: %d", rssdata->version);
 	debug("Channel:");
 	debug("\ttitle: %s", rssdata->title);
 	debug("\tdescription: %s", rssdata->description);
 	debug("\tlink: %s", rssdata->link);
 	debug("\tpub date: %s", rssdata->pubDate);
-	debug("Image:");
-	debug("\ttitle: %s", rssdata->image_title);
-	debug("\tdescription: %s", rssdata->image_description);
-	debug("\turl: %s", rssdata->image_url);
-	debug("\tlink: %s", rssdata->image_link);
-	debug("\tW x H: %d x %d", rssdata->image_width, rssdata->image_height);
+	debug2("Image:");
+	debug2("\ttitle: %s", rssdata->image_title);
+	debug2("\tdescription: %s", rssdata->image_description);
+	debug2("\turl: %s", rssdata->image_url);
+	debug2("\tlink: %s", rssdata->image_link);
+	debug2("\tW x H: %d x %d", rssdata->image_width, rssdata->image_height);
 
 	debug("Items:");
 	for (rssitem = rssdata->item, n = 0;
@@ -218,10 +212,10 @@ static int fetch_feed(char *feed_url)
 
 		debug("\tItem %zu:", n);
 		debug("\t\ttitle: %s", rssitem->title);
-		debug("\t\tdescription: %s", rssitem->description);
-		debug("\t\tlink: %s", rssitem->link);
-		debug("\t\tguid: %s", rssitem->guid);
-		debug("\t\tenclosure_url: %s", rssitem->enclosure_url);
+		debug2("\t\tdescription: %s", rssitem->description);
+		debug2("\t\tlink: %s", rssitem->link);
+		debug2("\t\tguid: %s", rssitem->guid);
+		debug2("\t\tenclosure_url: %s", rssitem->enclosure_url);
 		debug("\t\tpub date: %s", rssitem->pubDate);
 
 		selfoss_getId(rssdata, rssitem, uid_buf);
