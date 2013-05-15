@@ -89,35 +89,126 @@ static void dump_node(TidyNode tnod, int indent)
 	}
 }
 
-static int walk_and_remove(TidyDoc tdoc, TidyNode tnod)
+static inline bool is_acceptable_content_tag(TidyTagId tid)
 {
-	TidyNode child;
+	/* tag list defined at selfoss/helpers/ContentLoader.php 179
+	 * in function sanitizeContent() */
+	return (
+			tid == TidyTag_DIV	||
+			tid == TidyTag_P	||
+			tid == TidyTag_UL	||
+			tid == TidyTag_LI	||
+			tid == TidyTag_A	||
+			tid == TidyTag_IMG	||
+			tid == TidyTag_DL	||
+			tid == TidyTag_DT	||
+			tid == TidyTag_H1	||
+			tid == TidyTag_H2	||
+			tid == TidyTag_H3	||
+			tid == TidyTag_H4	||
+			tid == TidyTag_H5	||
+			tid == TidyTag_H6	||
+			tid == TidyTag_OL	||
+			tid == TidyTag_BR	||
+			tid == TidyTag_TABLE	||
+			tid == TidyTag_TR	||
+			tid == TidyTag_TD	||
+			tid == TidyTag_BLOCKQUOTE	||
+			tid == TidyTag_PRE	||
+			tid == TidyTag_INS	||
+			tid == TidyTag_DEL	||
+			tid == TidyTag_TH	||
+			tid == TidyTag_THEAD	||
+			tid == TidyTag_TBODY	||
+			tid == TidyTag_B	||
+			tid == TidyTag_I	||
+			tid == TidyTag_STRONG	||
+			tid == TidyTag_EM	||
+			tid == TidyTag_TT
+	       );
+}
+
+static inline bool is_acceptable_content_attr(AttVal *attr)
+{
+	/* attrib list defined at selfoss/helpers/ContentLoader.php 175
+	 * in function sanitizeContent() */
+	return (
+			attrIsALT(attr)		||
+			attrIsTITLE(attr)	||
+			attrIsSRC(attr)		||
+			attrIsNAME(attr)	||
+			attrIsREL(attr)	||
+			attrIsHREF(attr)
+	       );
+}
+
+static void sanitize_attributes(TidyDocImpl* doc, Node* node)
+{
+	AttVal *attr, *next, *prev = NULL;
+	bool bad_href = false;
+
+	for (attr = node->attributes; attr; attr = next) {
+		next = attr->next;
+
+		/* deny href="javascript: alert('powned')" */
+		bad_href = ( attrIsHREF(attr) && attr->value &&
+				!strncmp("javascript", attr->value , 10) );
+
+		if (bad_href || !is_acceptable_content_attr(attr) ) {
+			if (prev)
+				prev->next = next;
+			else
+				node->attributes = next;
+
+			debug("drop %s attr %s%s",
+					tidyNodeGetName(tidyImplToNode(node)),
+					tidyAttrName(tidyImplToAttr(attr)),
+					(bad_href) ? " [bad proto]" : "");
+
+			TY_(FreeAttribute)(doc, attr);
+		}
+		else
+			prev = attr;
+	}
+}
+
+static void walk_and_remove(TidyDoc tdoc, TidyNode tnod)
+{
+	TidyNode child, next_child;
 	TidyTagId tid;
 	TidyNodeType nt;
 
 	for (child = tidyGetChild(tnod);
 			child;
-			child = tidyGetNext(child)) {
+			child = next_child) {
+		next_child = tidyGetNext(child);
 
 		nt = tidyNodeGetType(child);
 		if (nt == TidyNode_Start ||
 			nt == TidyNode_End ||
 			nt == TidyNode_StartEnd) {
 
+			Node *np = tidyNodeToImpl(child);
+
 			tid = tidyNodeGetId(child);
-			if (tid == TidyTag_SCRIPT) {
+			if (!is_acceptable_content_tag(tid)) {
 				/* remove subtree */
-				debug("drop %s", tidyNodeGetName(child));
+				debug("drop node %s", tidyNodeGetName(child));
 
-				Node *p = tidyNodeToImpl(child);
+				/* fix list pointers */
+				if (np->prev) np->prev->next = np->next;
+				if (np->next) np->next->prev = np->prev;
+				if (np->parent && np->parent->content == np)
+					np->parent->content = np->next;
+				np->next = NULL;
 
-				if (p->prev) p->prev->next = p->next;
-				if (p->next) p->next->prev = p->prev;
-				if (p->parent && p->parent->content == p)
-					p->parent->content = p->next;
-				p->next = NULL;
+				TY_(FreeNode)(tidyDocToImpl(tdoc), np);
 
-				TY_(FreeNode)(tidyDocToImpl(tdoc), p);
+				continue; /* prevent access to fereed data */
+			}
+			else {
+				/* acceptable tag, now remove bad attributes */
+				sanitize_attributes(tidyDocToImpl(tdoc), np);
 			}
 		}
 
@@ -132,17 +223,17 @@ static int sanitize_nodes(TidyDoc tdoc)
 	int rc;
 	TidyNode body = tidyGetBody(tdoc);
 
-	debug("before:\n----------------------------------------");
-	dump_node(body, 0);
-	debug("----------------------------------------");
+	debug3("before:\n----------------------------------------");
+	if (__debug_level > 2) dump_node(body, 0);
+	debug3("----------------------------------------");
 
-	rc = walk_and_remove(tdoc, body);
+	walk_and_remove(tdoc, body);
 
-	debug("after:\n----------------------------------------");
-	dump_node(body, 0);
-	debug("----------------------------------------");
+	debug3("after:\n----------------------------------------");
+	if (__debug_level > 2) dump_node(body, 0);
+	debug3("----------------------------------------");
 
-	return rc;
+	return 0;
 }
 
 /* -*- public -*- */
@@ -185,12 +276,12 @@ int sanitize_content(char **content)
 				"--------------------------------",
 				errbuf.size, errbuf.bp);
 
-		debug("source: len=%zu\n"
+		debug3("source: len=%zu\n"
 			"--------------------------------\n"
 			"%s\n"
 			"--------------------------------",
 			strlen(*content), *content);
-		debug("result: len=%zu (sz=%u)\n"
+		debug3("result: len=%zu (sz=%u)\n"
 			"--------------------------------\n"
 			"%s\n"
 			"--------------------------------",
