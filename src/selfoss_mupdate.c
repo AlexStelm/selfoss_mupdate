@@ -28,12 +28,15 @@
 #include "nxml.h"
 #include "mrss.h"
 #include "tidy.h"
+#include "bb_md5_sha.h"
 
 #define SELFOSS_VERSION		"2.7"
 #define MY_VERSION		"0.1"
 
 bool __debug_enable = true;
 #define debug(fmt, ...)		if (__debug_enable) fprintf(stderr, "%s: " fmt "\n", __func__, ##__VA_ARGS__)
+#define debug2(fmt, ...)
+#define debug3(fmt, ...)
 
 #define IDSIZE			255
 
@@ -54,7 +57,7 @@ void iconv_replace(iconv_t cd, char **field)
 	//out_sz = _out_sz = (in_sz <= PAGE/2) ? PAGE : in_sz * 2;
 	out_sz = _out_sz = in_sz * 2;
 
-	debug("1: in_sz=%zu, out_sz=%zu", in_sz, out_sz);
+	debug3("1: in_sz=%zu, out_sz=%zu", in_sz, out_sz);
 
 	if ((buf = calloc(out_sz, 1)) == NULL)
 		err(1, "out of memory\n");
@@ -71,7 +74,7 @@ void iconv_replace(iconv_t cd, char **field)
 		err(1, "iconv()");
 	}
 
-	debug("2. in_sz=%zu, out_sz=%zu, ret_sz=%zu, out/in=%zu",
+	debug3("2. in_sz=%zu, out_sz=%zu, ret_sz=%zu, out/in=%zu",
 			in_sz, out_sz, ret_sz, out_sz / in_sz);
 
 	free(*field);
@@ -80,22 +83,59 @@ void iconv_replace(iconv_t cd, char **field)
 
 size_t simplepie_get_id(mrss_t *rss, mrss_item_t *item, char *buf, size_t sz)
 {
+	if (item->guid != NULL) {
+		strncpy(buf, item->guid, sz - 1);
+		debug("choose guid%s: %s", (item->guid_isPermaLink) ? " [permalink]" : "", item->guid);
+	}
+	else if (item->link != NULL) {
+		strncpy(buf, item->link, sz - 1);
+		debug("choose link: %s", item->link);
+	}
+	else if (item->enclosure_url != NULL) {
+		strncpy(buf, item->enclosure_url, sz - 1);
+		debug("choose encloseure url: %s", item->enclosure_url);
+	}
+	else if (item->title != NULL) {
+		strncpy(buf, item->title, sz - 1);
+		debug("choose title: %s", item->title);
+	}
+	else {
+		debug("BUG!");
+		return 0;
+	}
 
+	return strnlen(buf, sz);
 }
 
-void selfoss_getId(mrss_t *rss, mrss_item_t *item, char buf[IDSIZE + 1])
+size_t selfoss_getId(mrss_t *rss, mrss_item_t *item, char *buf_256)
 {
 	char sp_buf[4096];
 	size_t sz;
 
 	sz = simplepie_get_id(rss, item, sp_buf, sizeof(sp_buf));
 	if (sz > IDSIZE) {
-		/* do md5 hex digest sp_buf > md5 */
+		md5_ctx_t ctx;
+		char digest[16];
+
+		md5_begin(&ctx);
+		md5_hash(&ctx, sp_buf, sz);
+		md5_end(&ctx, &digest);
+
+		sz = snprintf(buf_256, IDSIZE + 1,
+				"%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+				digest[0], digest[1], digest[2], digest[3],
+				digest[4], digest[5], digest[6], digest[7],
+				digest[8], digest[9], digest[10], digest[11],
+				digest[12], digest[13], digest[14], digest[15]);
 	}
 	else {
-		memcpy(buf, sp_buf, sz);
-		buf[sz] = '\0';
+		memcpy(buf_256, sp_buf, sz);
+		buf_256[sz] = '\0';
 	}
+
+	debug("sz=%zu, id: %s", sz, buf_256);
+
+	return sz;
 }
 
 int parse_feed(char *feed_url)
@@ -151,6 +191,7 @@ int parse_feed(char *feed_url)
 	debug("\ttitle: %s", rssdata->title);
 	debug("\tdescription: %s", rssdata->description);
 	debug("\tlink: %s", rssdata->link);
+	debug("\tpub date: %s", rssdata->pubDate);
 	debug("Image:");
 	debug("\ttitle: %s", rssdata->image_title);
 	debug("\tdescription: %s", rssdata->image_description);
@@ -161,11 +202,15 @@ int parse_feed(char *feed_url)
 	debug("Items:");
 	rssitem = rssdata->item;
 	while (rssitem) {
+		char uid_buf[IDSIZE + 1];
+
 		iconv_replace(iconv_cd, &rssitem->title);
 		iconv_replace(iconv_cd, &rssitem->description);
 		iconv_replace(iconv_cd, &rssitem->link);
 		iconv_replace(iconv_cd, &rssitem->guid);
 		iconv_replace(iconv_cd, &rssitem->enclosure_url);
+
+		selfoss_getId(rssdata, rssitem, uid_buf);
 
 		debug("\tItem %p:", rssitem);
 		debug("\t\ttitle: %s", rssitem->title);
@@ -173,6 +218,9 @@ int parse_feed(char *feed_url)
 		debug("\t\tlink: %s", rssitem->link);
 		debug("\t\tguid: %s", rssitem->guid);
 		debug("\t\tenclosure_url: %s", rssitem->enclosure_url);
+		debug("\t\tpub date: %s", rssitem->pubDate);
+
+		debug("\t\t\tUID: %s", uid_buf);
 
 		rssitem = rssitem->next;
 	}
