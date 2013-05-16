@@ -19,19 +19,22 @@
 
 #include "selfoss_mupdate.h"
 #include <iconv.h>
-#include <time.h>
+#include <unistd.h>
 
 #include "nxml.h"
 #include "mrss.h"
+#include "tidy.h"
 #include "bb_md5_sha.h"
 
 
+#define PROGNAME		"selfoss_mupdate"
 #define SELFOSS_VERSION		"2.7"
 #define MY_VERSION		"0.1"
 
-int __debug_level = 3;
+int __debug_level = 0;
 
 #define IDSIZE			255
+#define SPOUT0			"spouts\\rss\\feed"
 
 /* -*- content preparation -*- */
 
@@ -137,7 +140,7 @@ static size_t selfoss_getId(mrss_t *rss, mrss_item_t *item, char *buf_256)
 	return sz;
 }
 
-static int fetch_feed(char *feed_url)
+static int fetch_feed(sqlite3 *db, int source_id, char *feed_url)
 {
 	mrss_t *rssdata;
 	mrss_error_t mret;
@@ -189,16 +192,16 @@ static int fetch_feed(char *feed_url)
 	if (rssdata->pubDate != NULL)
 		strptime(rssdata->pubDate, "%a, %d %b %Y %H:%M:%S %z", &item_tm);
 
-	debug("Generic:");
-	debug("\tfile url: %s", rssdata->file);
-	debug("\tencoding: %s", rssdata->encoding);
+	debug ("Generic:");
+	debug ("\tfile url: %s", rssdata->file);
+	debug ("\tencoding: %s", rssdata->encoding);
 	debug2("\tsize: %zu", rssdata->size);
 	debug2("\ttype: %d", rssdata->version);
-	debug("Channel:");
-	debug("\ttitle: %s", rssdata->title);
-	debug("\tdescription: %s", rssdata->description);
-	debug("\tlink: %s", rssdata->link);
-	debug("\tpub date: %s", rssdata->pubDate);
+	debug ("Channel:");
+	debug ("\ttitle: %s", rssdata->title);
+	debug ("\tdescription: %s", rssdata->description);
+	debug ("\tlink: %s", rssdata->link);
+	debug ("\tpub date: %s", rssdata->pubDate);
 	debug2("Image:");
 	debug2("\ttitle: %s", rssdata->image_title);
 	debug2("\tdescription: %s", rssdata->image_description);
@@ -211,8 +214,10 @@ static int fetch_feed(char *feed_url)
 		rssitem != NULL;
 		rssitem = rssitem->next, n++) {
 
+		char *icon, *thumb;
 		char uid_buf[IDSIZE + 1];
 		int rc;
+		bool exists;
 
 		iconv_replace(iconv_cd, &rssitem->title);
 		iconv_replace(iconv_cd, &rssitem->description);
@@ -220,17 +225,22 @@ static int fetch_feed(char *feed_url)
 		iconv_replace(iconv_cd, &rssitem->guid);
 		iconv_replace(iconv_cd, &rssitem->enclosure_url);
 
-		debug("\tItem %zu:", n);
-		debug("\t\ttitle: %s", rssitem->title);
+		debug ("\tItem %zu:", n);
+		debug ("\t\ttitle: %s", rssitem->title);
 		debug2("\t\tdescription: %s", rssitem->description);
 		debug2("\t\tlink: %s", rssitem->link);
 		debug2("\t\tguid: %s", rssitem->guid);
 		debug2("\t\tenclosure_url: %s", rssitem->enclosure_url);
-		debug("\t\tpub date: %s", rssitem->pubDate);
+		debug ("\t\tpub date: %s", rssitem->pubDate);
 
 		selfoss_getId(rssdata, rssitem, uid_buf);
-		/* check zero: SELECT count(*) FROM items WHERE uid=:uid */
-		/* continue */
+		rc = db_item_exists(db, uid_buf, &exists);
+		if (rc != SQLITE_OK)
+			err(1, "sqlite fail");
+		if (exists) {
+			debug("item alredy exists. skipped");
+			continue;
+		}
 
 		if (rssitem->pubDate != NULL)
 			strptime(rssitem->pubDate, "%a, %d %b %Y %H:%M:%S %z", &item_tm);
@@ -254,8 +264,18 @@ static int fetch_feed(char *feed_url)
 			continue;
 		}
 
+		/* TODO: try download favicon.ico
+		 * req. libgd or so .ico -> md5(url).png 30x30 */
+		icon = NULL;
 
+		/* TODO: try find thumb in enclosure
+		 * req. same as for icon */
+		thumb = NULL;
+
+		//db_item_add(db);
 	}
+
+	//db_source_update(db);
 
 	iconv_close(iconv_cd);
 	mrss_free(rssdata);
@@ -265,27 +285,73 @@ static int fetch_feed(char *feed_url)
 
 /* -*- Main -*- */
 
-static void usage(char *argv0)
+static void usage(FILE *fl, int ex)
 {
-	fprintf(stderr, "Usage: %s <rss link>\n", argv0);
-	exit(1);
+	fprintf(fl, "Usage: %s [-dVh] <selfoss.sqlite.db> <feed url>\n", PROGNAME);
+	fprintf(fl, "\n");
+	fprintf(fl, "\t-d\t\tdebug level (-ddd maximum)\n");
+	fprintf(fl, "\t-h\t\tthis help\n");
+	fprintf(fl, "\t-V\t\tversion info\n");
+	exit(ex);
 }
 
-static void version(char *argv0)
+static void version()
 {
-	fprintf(stdout, "%s %s\n", argv0, MY_VERSION);
+	fprintf(stdout, "%s %s\n", PROGNAME, MY_VERSION);
 	fprintf(stdout, "Compatible with selfoss version: %s\n\n", SELFOSS_VERSION);
 	fprintf(stdout, "libNXML version: %s\n", LIBNXML_VERSION_STRING);
 	fprintf(stdout, "libMRSS version: %s\n", LIBMRSS_VERSION_STRING);
-	fprintf(stdout, "HTML Tidy version: %s\n", "TODO");
+	fprintf(stdout, "HTML Tidy version: %s\n", tidyReleaseDate());
 }
 
 int main(int argc, char *argv[])
 {
-	if (argc != 2) usage(argv[0]);
-	//version(argv[0]);
+	int opt, rc;
+	sqlite3 *db;
 
-	fetch_feed(argv[1]);
+	while ((opt = getopt(argc, argv, "dVh")) != -1) {
+		switch (opt) {
+			case 'd':
+				__debug_level += 1;
+				break;
+
+			case 'V':
+				version();
+				return 0;
+
+			case 'h':
+				usage(stdout, 0);
+
+			default:
+				usage(stderr, 1);
+		}
+	}
+
+	if (optind >= argc) {
+		fprintf(stderr, "Expected arguments\n");
+		usage(stderr, 1);
+	}
+
+	rc = sqlite3_open(argv[optind], &db);
+	if (rc) {
+		fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
+		sqlite3_close(db);
+		return 1;
+	}
+
+	bool ex;
+	time_t t; struct tm tm;
+
+	t = time(NULL);
+	gmtime_r(&t, &tm);
+
+	db_item_add(db, 22, "db test title", "db test desc", "db-uid", "link", "th", "ico", &tm);
+	db_source_set_lastupdate(db, 22, 0);
+	db_item_exists(db, "db-uid", &ex);
+
+	//fetch_feed(db, argv[1]);
+
+	sqlite3_close(db);
 
 	return 0;
 }

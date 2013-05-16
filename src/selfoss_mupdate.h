@@ -17,8 +17,8 @@
  *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SEFOSS_MUPDATE_H
-#define SEFOSS_MUPDATE_H
+#ifndef SELFOSS_MUPDATE_H
+#define SELFOSS_MUPDATE_H
 
 #define _GNU_SOURCE
 
@@ -29,6 +29,8 @@
 #include <errno.h>
 #include <err.h>
 
+#include <time.h>
+#include <sqlite3.h>
 
 #ifndef _NDEBUG
 
@@ -49,4 +51,12 @@ extern int __debug_level;
 void sanitize_text_only(char **field);
 int sanitize_content(char **content);
 
-#endif /* SEFOSS_MUPDATE_H */
+int db_item_exists(sqlite3 *db, char *uid, bool *result);
+int db_item_add(sqlite3 *db, int source_id,
+		char *title, char *content, char *uid, char *link,
+		char *thumb, char *icon, struct tm *pub_tm);
+int db_source_set_lastupdate(sqlite3 *db, int source_id, time_t lastupdate);
+int db_source_get_all_by_lastupdate(sqlite3 *db);
+int db_source_get(sqlite3 *db, int source_id);
+
+#endif /* SELFOSS_MUPDATE_H */
