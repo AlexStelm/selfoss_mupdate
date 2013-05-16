@@ -252,7 +252,7 @@ void sanitize_text_only(char **field)
 	char *rdp, *wrp, *ob;
 	size_t ob_sz;
 
-	assert(field && *field);
+	if (!(field && *field)) return;
 
 	ob_sz = strlen(*field);
 	ob = calloc(ob_sz + 1, 1);

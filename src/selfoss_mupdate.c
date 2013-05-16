@@ -46,7 +46,9 @@ char *__nxml_trim(char *);
 
 static void trim_replace(char **field)
 {
-	char *p = __nxml_trim(*field);
+	char *p;
+	if (!(field && *field)) return;
+	p = __nxml_trim(*field);
 	free(*field);
 	*field = p;
 }
@@ -250,7 +252,7 @@ static int fetch_feed(sqlite3 *db, int source_id, char *feed_url)
 
 		sanitize_text_only(&rssitem->title);
 		trim_replace(&rssitem->title);
-		if (strlen(rssitem->title) < 2) {
+		if (rssitem->title == NULL || strlen(rssitem->title) < 2) {
 			free(rssitem->title);
 			rssitem->title = strdup("[ NO TITLE ]");
 		}
