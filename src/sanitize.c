@@ -325,7 +325,7 @@ int sanitize_content(char **content)
 
 	if (rc >= 0) {
 		if (rc > 0)
-			debug("errbuf len=%u:\n"
+			debug2("errbuf len=%u:\n"
 				"--------------------------------\n"
 				"%s"
 				"--------------------------------",
