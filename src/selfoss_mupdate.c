@@ -35,6 +35,16 @@ int __debug_level = 3;
 
 /* -*- content preparation -*- */
 
+/* nxml internal, modifies tmp, return new str  */
+char *__nxml_trim(char *);
+
+static void trim_replace(char **field)
+{
+	char *p = __nxml_trim(*field);
+	free(*field);
+	*field = p;
+}
+
 static void iconv_replace(iconv_t cd, char **field)
 {
 	char *in, *out, *buf;
@@ -224,6 +234,13 @@ static int fetch_feed(char *feed_url)
 
 		if (rssitem->pubDate != NULL)
 			strptime(rssitem->pubDate, "%a, %d %b %Y %H:%M:%S %z", &item_tm);
+
+		sanitize_text_only(&rssitem->title);
+		trim_replace(&rssitem->title);
+		if (strlen(rssitem->title) < 2) {
+			free(rssitem->title);
+			rssitem->title = strdup("[ NO TITLE ]");
+		}
 
 		rc = sanitize_content(&rssitem->description);
 		if (rc > 1)

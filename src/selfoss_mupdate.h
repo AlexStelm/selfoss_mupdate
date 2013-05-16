@@ -46,7 +46,7 @@ extern int __debug_level;
 #endif
 
 /* prototypes */
-void sanitize_drop(char **field);
+void sanitize_text_only(char **field);
 int sanitize_content(char **content);
 
 #endif /* SEFOSS_MUPDATE_H */

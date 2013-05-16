@@ -214,8 +214,6 @@ static void walk_and_remove(TidyDoc tdoc, TidyNode tnod)
 
 		walk_and_remove(tdoc, child);
 	}
-
-	return 0;
 }
 
 static int sanitize_nodes(TidyDoc tdoc)
@@ -238,8 +236,65 @@ static int sanitize_nodes(TidyDoc tdoc)
 
 /* -*- public -*- */
 
-void sanitize_drop(char **field)
+enum pstate {
+	ST_IN,
+	ST_OUT
+};
+
+/* adopted version from
+ * http://c.happycodings.com/Small_Programs/code28.html */
+void sanitize_text_only(char **field)
 {
+	enum pstate state = ST_OUT;
+	enum pstate tstate = ST_OUT;
+	char tagbuff[2048];
+	char *tagp = NULL;
+	char *rdp, *wrp, *ob;
+	size_t ob_sz;
+
+	assert(field && *field);
+
+	ob_sz = strlen(*field);
+	ob = calloc(ob_sz + 1, 1);
+	if (ob == NULL)
+		err(1, "out of memory!");
+
+	tagp = tagbuff;
+	rdp = *field;
+	wrp = ob;
+
+	for (size_t n = ob_sz; rdp && n; rdp++, n--) {
+		/* copy tag into tagbuff */
+		if (*rdp == '<' || *rdp == '&') state = ST_IN;
+		if (state == ST_IN) *tagp++ = *rdp;
+		if (*rdp == '>' || *rdp == ';') {
+			state = ST_OUT; *tagp++ = '\0';
+
+			/* search tagbuff, javascript, style tags */
+			if (strstr(tagbuff, "<s") != 0 || strstr(tagbuff, "<S") != 0)
+				tstate = ST_IN;
+			if (strstr(tagbuff, "</") != 0)
+				tstate = ST_OUT;
+
+			/*   ? */
+			if (strstr(tagbuff, "nbsp") != 0 || strstr(tagbuff, "NBSP") != 0)
+				*wrp++ = ' ';
+
+			tagp = tagbuff;
+		} /* end if */
+
+		/* not in a tag, print character */
+		if (state == ST_OUT && tstate == ST_OUT && *rdp != '>' && *rdp != ';')
+			*wrp++ = *rdp;
+	}
+
+	/* ob null terminated by calloc() */
+
+	debug3("source: len=%zu '%s'", ob_sz, *field);
+	debug3("result: len=%zu '%s'", strlen(ob), ob);
+
+	free(*field);
+	*field = ob;
 }
 
 int sanitize_content(char **content)
