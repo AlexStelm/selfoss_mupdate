@@ -160,7 +160,7 @@ static void sanitize_attributes(TidyDocImpl* doc, Node* node)
 			else
 				node->attributes = next;
 
-			debug("drop %s attr %s%s",
+			debug2("drop %s attr %s%s",
 					tidyNodeGetName(tidyImplToNode(node)),
 					tidyAttrName(tidyImplToAttr(attr)),
 					(bad_href) ? " [bad proto]" : "");
@@ -193,7 +193,7 @@ static void walk_and_remove(TidyDoc tdoc, TidyNode tnod)
 			tid = tidyNodeGetId(child);
 			if (!is_acceptable_content_tag(tid)) {
 				/* remove subtree */
-				debug("drop node %s", tidyNodeGetName(child));
+				debug2("drop node %s", tidyNodeGetName(child));
 
 				/* fix list pointers */
 				if (np->prev) np->prev->next = np->next;

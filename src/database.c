@@ -53,6 +53,8 @@ int db_item_add(sqlite3 *db, int source_id,
 {
 	sqlite3_stmt *stmt;
 	char datetime[256];
+	size_t dt_sz;
+	time_t t;
 	char sql[] = "INSERT INTO items ("
 		"datetime, title, content, unread, "
 		"starred, source, thumbnail, icon, "
@@ -63,11 +65,9 @@ int db_item_add(sqlite3 *db, int source_id,
 		":uid, :link )";
 	int rc;
 
-	/* stored in localtime */
-	time_t t = mktime(pub_tm);
-	localtime_r(&t, pub_tm);
-
-	size_t dt_sz = strftime(datetime, sizeof(datetime), "%F %T", pub_tm);
+	/* stored in localtime, convert */
+	t = timegm(pub_tm); *pub_tm = *localtime(&t);
+	dt_sz = strftime(datetime, sizeof(datetime), "%F %T", pub_tm);
 
 	/* in schema icon & thumbnail can be NULL, but actual software sets "", not NULL */
 	if (icon == NULL) icon = "";
@@ -140,13 +140,13 @@ int db_source_get_stmt(sqlite3 *db, int source_id, sqlite3_stmt **stmt)
 }
 
 int db_source_get(sqlite3 *db, int source_id,
-		char **title, char **tags, char **spout,
-		char **params, char **error)
+		const char **title, const char **tags, const char **spout,
+		const char **params, const char **error)
 {
 	sqlite3_stmt *stmt;
 	int rc, sid;
 
-	rc = db_sorce_get_stmt(db, source_id, &stmt);
+	rc = db_source_get_stmt(db, source_id, &stmt);
 	if (rc == SQLITE_OK)
 		rc = sqlite3_step(stmt);
 

@@ -189,7 +189,7 @@ static int fetch_feed(sqlite3 *db, int source_id, char *feed_url)
 	iconv_replace(iconv_cd, &rssdata->image_description);
 
 	item_time = time(NULL);
-	gmtime_r(&item_time, &item_tm);
+	item_tm = *gmtime(&item_time);
 	if (rssdata->pubDate != NULL)
 		strptime(rssdata->pubDate, "%a, %d %b %Y %H:%M:%S %z", &item_tm);
 
