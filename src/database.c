@@ -69,6 +69,10 @@ int db_item_add(sqlite3 *db, int source_id,
 
 	size_t dt_sz = strftime(datetime, sizeof(datetime), "%F %T", pub_tm);
 
+	/* in schema icon & thumbnail can be NULL, but actual software sets "", not NULL */
+	if (icon == NULL) icon = "";
+	if (thumb == NULL) thumb = "";
+
 	rc = sqlite3_prepare_v2(db, sql, sizeof(sql), &stmt, NULL);
 	if (rc == SQLITE_OK) rc = sqlite3_bind_text(stmt, 1, datetime, dt_sz, SQLITE_STATIC);
 	if (rc == SQLITE_OK) rc = sqlite3_bind_text(stmt, 2, title, -1, SQLITE_STATIC);
@@ -106,43 +110,48 @@ int db_source_set_lastupdate(sqlite3 *db, int source_id, time_t lastupdate)
 	return sqlite3_finalize(stmt);
 }
 
-int db_source_get_all_by_lastupdate(sqlite3 *db)
+void db_source_stmt_to_data(sqlite3_stmt *stmt, int *source_id,
+		const char **title, const char **tags, const char **spout,
+		const char **params, const char **error)
 {
-	/* "SELECT id, title, tags, spout, params, error FROM sources ORDER BY lastupdate ASC" */
-
-	return 0;
+		*source_id =	sqlite3_column_int (stmt, 0);
+		*title =	sqlite3_column_text(stmt, 1);
+		*tags =		sqlite3_column_text(stmt, 2);
+		*spout =	sqlite3_column_text(stmt, 3);
+		*params =	sqlite3_column_text(stmt, 4);
+		*error =	sqlite3_column_text(stmt, 5);
 }
 
-int db_source_get(sqlite3 *db, int source_id,
-		char **title, char **params, char **spouts,
-		char **params, char **error)
+int db_source_get_all_by_lastupdate_stmt(sqlite3 *db, sqlite3_stmt **stmt)
 {
-	sqlite3_stmt *stmt;
+	char sql[] = "SELECT id, title, tags, spout, params, error FROM sources ORDER BY lastupdate ASC";
+	return sqlite3_prepare_v2(db, sql, sizeof(sql), stmt, NULL);
+}
+
+int db_source_get_stmt(sqlite3 *db, int source_id, sqlite3_stmt **stmt)
+{
 	char sql[] = "SELECT id, title, tags, spout, params, error FROM sources WHERE id=:id";
 	int rc;
 
-	rc = sqlite3_prepare_v2(db, sql, sizeof(sql), &stmt, NULL);
-	if (rc == SQLITE_OK) rc = sqlite3_bind_int(stmt, 1, source_id);
+	rc = sqlite3_prepare_v2(db, sql, sizeof(sql), stmt, NULL);
+	if (rc == SQLITE_OK) rc = sqlite3_bind_int(*stmt, 1, source_id);
 
+	return rc;
+}
+
+int db_source_get(sqlite3 *db, int source_id,
+		char **title, char **tags, char **spout,
+		char **params, char **error)
+{
+	sqlite3_stmt *stmt;
+	int rc, sid;
+
+	rc = db_sorce_get_stmt(db, source_id, &stmt);
 	if (rc == SQLITE_OK)
 		rc = sqlite3_step(stmt);
 
 	if (rc == SQLITE_ROW) {
-		sqlite3_column_bytes(stmt, 1);
-		*title = strdup(sqlite3_column_text(stmt, 1));
-
-		sqlite3_column_bytes(stmt, 2);
-		*tags = strdup(sqlite3_column_text(stmt, 2));
-
-		sqlite3_column_bytes(stmt, 3);
-		*spout = strdup(sqlite3_column_text(stmt, 3));
-
-		sqlite3_column_bytes(stmt, 4);
-		*params = strdup(sqlite3_column_text(stmt, 4));
-
-		sqlite3_column_bytes(stmt, 5);
-		*error = strdup(sqlite3_column_text(stmt, 5));
-
+		db_source_stmt_to_data(stmt, &sid, title, tags, spout, params, error);
 		debug3("source: #%d title: %s tags: %s spout: %s params: %s error: %s",
 				source_id, *title, *tags, *spout, *params, *error);
 	}

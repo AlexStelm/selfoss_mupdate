@@ -56,7 +56,13 @@ int db_item_add(sqlite3 *db, int source_id,
 		char *title, char *content, char *uid, char *link,
 		char *thumb, char *icon, struct tm *pub_tm);
 int db_source_set_lastupdate(sqlite3 *db, int source_id, time_t lastupdate);
-int db_source_get_all_by_lastupdate(sqlite3 *db);
-int db_source_get(sqlite3 *db, int source_id);
+void db_source_stmt_to_data(sqlite3_stmt *stmt, int *source_id,
+		const char **title, const char **tags, const char **spout,
+		const char **params, const char **error);
+int db_source_get_all_by_lastupdate_stmt(sqlite3 *db, sqlite3_stmt **stmt);
+int db_source_get_stmt(sqlite3 *db, int source_id, sqlite3_stmt **stmt);
+int db_source_get(sqlite3 *db, int source_id,
+		const char **title, const char **tags, const char **spout,
+		const char **params, const char **error);
 
 #endif /* SELFOSS_MUPDATE_H */

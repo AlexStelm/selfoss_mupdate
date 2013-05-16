@@ -150,6 +150,7 @@ static int fetch_feed(sqlite3 *db, int source_id, char *feed_url)
 	time_t item_time;
 	struct tm item_tm;
 	size_t n;
+	int rc;
 
 	if (!strncmp(feed_url, "http://", 7) || !strncmp(feed_url, "https://", 8))
 		mret = mrss_parse_url_with_options_and_error(feed_url, &rssdata, NULL, &ccode);
@@ -216,7 +217,6 @@ static int fetch_feed(sqlite3 *db, int source_id, char *feed_url)
 
 		char *icon, *thumb;
 		char uid_buf[IDSIZE + 1];
-		int rc;
 		bool exists;
 
 		iconv_replace(iconv_cd, &rssitem->title);
@@ -236,7 +236,7 @@ static int fetch_feed(sqlite3 *db, int source_id, char *feed_url)
 		selfoss_getId(rssdata, rssitem, uid_buf);
 		rc = db_item_exists(db, uid_buf, &exists);
 		if (rc != SQLITE_OK)
-			err(1, "sqlite fail");
+			errx(1, "sqlite fail");
 		if (exists) {
 			debug("item alredy exists. skipped");
 			continue;
@@ -272,10 +272,17 @@ static int fetch_feed(sqlite3 *db, int source_id, char *feed_url)
 		 * req. same as for icon */
 		thumb = NULL;
 
-		//db_item_add(db);
+		rc = db_item_add(db, source_id,
+				rssitem->title, rssitem->description, uid_buf, rssitem->link,
+				thumb, icon, &item_tm);
+		if (rc != SQLITE_OK)
+			errx(1, "failed to add new item (title: %s) to source %d",
+					rssitem->title, source_id);
 	}
 
-	//db_source_update(db);
+	rc = db_source_set_lastupdate(db, source_id, 0);
+	if (rc != SQLITE_OK)
+		errx(1, "db_source_update(db, %d, 0) NOT OK", source_id);
 
 	iconv_close(iconv_cd);
 	mrss_free(rssdata);
@@ -287,8 +294,9 @@ static int fetch_feed(sqlite3 *db, int source_id, char *feed_url)
 
 static void usage(FILE *fl, int ex)
 {
-	fprintf(fl, "Usage: %s [-dVh] <selfoss.sqlite.db> <feed url>\n", PROGNAME);
+	fprintf(fl, "Usage: %s [-dVh] [-s <source id>] <selfoss.sqlite.db> [<feed url>]\n", PROGNAME);
 	fprintf(fl, "\n");
+	fprintf(fl, "\t-s <source id>\tprocess only one source (required for <feed url>)\n");
 	fprintf(fl, "\t-d\t\tdebug level (-ddd maximum)\n");
 	fprintf(fl, "\t-h\t\tthis help\n");
 	fprintf(fl, "\t-V\t\tversion info\n");
@@ -306,13 +314,22 @@ static void version()
 
 int main(int argc, char *argv[])
 {
-	int opt, rc;
+	int opt, rc, fetch_rc = 1;
 	sqlite3 *db;
+	sqlite3_stmt *stmt;
+	int source_id = -1;
+	char *feed_url = NULL;
+	bool single_source = false;
 
-	while ((opt = getopt(argc, argv, "dVh")) != -1) {
+	while ((opt = getopt(argc, argv, "dVhs:")) != -1) {
 		switch (opt) {
 			case 'd':
 				__debug_level += 1;
+				break;
+
+			case 's':
+				source_id = atoi(optarg);
+				single_source = true;
 				break;
 
 			case 'V':
@@ -328,31 +345,57 @@ int main(int argc, char *argv[])
 	}
 
 	if (optind >= argc) {
-		fprintf(stderr, "Expected arguments\n");
+		fprintf(stderr, "Expected database file\n");
 		usage(stderr, 1);
 	}
 
-	rc = sqlite3_open(argv[optind], &db);
+	if (optind + 1 <= argc)
+		feed_url = argv[optind + 1];
+
+	if (feed_url != NULL && !single_source)
+		errx(1, "with <feed url> key -s required");
+
+	rc = sqlite3_open(argv[optind + 0], &db);
 	if (rc) {
 		fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
 		sqlite3_close(db);
 		return 1;
 	}
 
-	bool ex;
-	time_t t; struct tm tm;
+	if (single_source)
+		rc = db_source_get_stmt(db, source_id, &stmt);
+	else
+		rc = db_source_get_all_by_lastupdate_stmt(db, &stmt);
 
-	t = time(NULL);
-	gmtime_r(&t, &tm);
+	while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+		const char *title, *tags, *spout, *param, *error;
 
-	db_item_add(db, 22, "db test title", "db test desc", "db-uid", "link", "th", "ico", &tm);
-	db_source_set_lastupdate(db, 22, 0);
-	db_item_exists(db, "db-uid", &ex);
+		db_source_stmt_to_data(stmt, &source_id, &title, &tags, &spout, &param, &error);
 
-	//fetch_feed(db, argv[1]);
+		debug("source #%d title: %s tags: %s spout: %s param: %s erorr: %s",
+				source_id, title, tags, spout, param, error);
+
+		if (strcmp(SPOUT0, spout) != 0) {
+			debug("unsupported spout, skipped");
+			continue;
+		}
+
+		if (!single_source)
+			errx(1, "TODO fetch url");
+
+		fetch_rc = fetch_feed(db, source_id, feed_url);
+
+		/* db_source_get_stmt return one row, no break */
+	}
+
+	sqlite3_finalize(stmt);
+
+	if (rc != SQLITE_DONE) {
+		errx(1, "SQL error: %s %d", sqlite3_errmsg(db), rc);
+	}
 
 	sqlite3_close(db);
 
-	return 0;
+	return fetch_rc;
 }
 
