@@ -55,6 +55,7 @@ int db_item_add(sqlite3 *db, int source_id,
 	char datetime[256];
 	size_t dt_sz;
 	time_t t;
+	struct tm ltm;
 	char sql[] = "INSERT INTO items ("
 		"datetime, title, content, unread, "
 		"starred, source, thumbnail, icon, "
@@ -66,8 +67,8 @@ int db_item_add(sqlite3 *db, int source_id,
 	int rc;
 
 	/* stored in localtime, convert */
-	t = timegm(pub_tm); *pub_tm = *localtime(&t);
-	dt_sz = strftime(datetime, sizeof(datetime), "%F %T", pub_tm);
+	t = timegm(pub_tm); ltm = *localtime(&t);
+	dt_sz = strftime(datetime, sizeof(datetime), "%F %T", &ltm);
 
 	/* in schema icon & thumbnail can be NULL, but actual software sets "", not NULL */
 	if (icon == NULL) icon = "";
