@@ -10,7 +10,7 @@ MRSS_URL := "http://www.autistici.org/bakunin/libmrss/libmrss-$(MRSS_VER).tar.gz
 TOP_DIR := "$(shell pwd)"
 LIBINST_DIR := "$(TOP_DIR)/build/install"
 
-all: build/libnxml.a build/libmrss.a build/libtidy.a
+all: build/libnxml.a build/libmrss.a build/libtidy.a src/selfoss_mupdater
 
 dl/libnxml-$(NXML_VER).tar.gz:
 	cd $(TOP_DIR)/dl && wget -c $(NXML_URL)
@@ -52,7 +52,11 @@ build/install/opt/lib/libtidy.a: build/libtidy
 build/%.a: build/install/opt/lib/%.a
 	cp $< $@
 
+src/selfoss_mupdater:
+	make -C $(TOP_DIR)/src
+
 clean:
 	rm -rf $(TOP_DIR)/build/lib*
 	rm -rf $(TOP_DIR)/build/install/*
+	make -C $(TOP_DIR)/src clean
 
