@@ -10,12 +10,13 @@ LIBS_a := $(TOP_DIR)/build/libmrss.a \
 	$(TOP_DIR)/build/libnxml.a \
 	$(TOP_DIR)/build/libtidy.a
 
-LIBS := -lmrss -lnxml -lcurl -ltidy -lsqlite3
+LIBS := -lmrss -lnxml -ltidy -lcurl -lsqlite3 -ljson
 
 OBJS := selfoss_mupdate.o \
 	hash_md5_sha.o \
 	sanitize.o \
-	database.o
+	database.o \
+	entities.o
 
 all: selfoss_mupdate
 
@@ -28,3 +29,4 @@ sanitize.o: sanitize.c
 
 clean:
 	rm *.o selfoss_mupdate
+

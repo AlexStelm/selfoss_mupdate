@@ -1,3 +1,6 @@
 [submodule "dl/tidy-html5"]
 	path = dl/tidy-html5
 	url = git://github.com/w3c/tidy-html5.git
+[submodule "dl/html-cstuff"]
+	path = dl/html-cstuff
+	url = https://bitbucket.org/cggaertner/cstuff.git

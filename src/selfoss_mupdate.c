@@ -21,10 +21,13 @@
 #include <iconv.h>
 #include <unistd.h>
 
+#include <json/json.h>
+
 #include "nxml.h"
 #include "mrss.h"
 #include "tidy.h"
 #include "bb_md5_sha.h"
+#include "entities.h"
 
 
 #define PROGNAME		"selfoss_mupdate"
@@ -290,6 +293,41 @@ static int fetch_feed(sqlite3 *db, int source_id, char *feed_url)
 	return 0;
 }
 
+static char *spout_param_get_url(const char *param_string)
+{
+	struct json_object *param_obj, *o;
+	char *buf = NULL;
+	size_t sz;
+
+	sz = strlen(param_string);
+	buf = malloc(sz + 1);
+	if (buf == NULL)
+		err(1, "out of memory");
+
+	sz = decode_html_entities_utf8(buf, param_string);
+	param_obj = json_tokener_parse(buf);
+	debug3("json obj: %s", json_object_to_json_string(param_obj));
+
+	if (json_object_object_get_ex(param_obj, "url", &o)) {
+		if ((sz = json_object_get_string_len(o)) > 0) {
+			memmove(buf, json_object_get_string(o), sz);
+			buf[sz] = '\0';
+			debug3("url: %s", buf);
+		}
+	}
+	else
+		sz = 0;
+
+	json_object_put(param_obj);
+
+	if (sz == 0) {
+		free(buf);
+		buf = NULL;
+	}
+
+	return buf;
+}
+
 /* -*- Main -*- */
 
 static void usage(FILE *fl, int ex)
@@ -349,8 +387,8 @@ int main(int argc, char *argv[])
 		usage(stderr, 1);
 	}
 
-	if (optind + 1 <= argc)
-		feed_url = argv[optind + 1];
+	if (argc - optind >= 2)
+		feed_url = strdup(argv[optind + 1]);
 
 	if (feed_url != NULL && !single_source)
 		errx(1, "with <feed url> key -s required");
@@ -380,11 +418,17 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		if (!single_source)
-			errx(1, "TODO fetch url");
+		if (feed_url == NULL)
+			feed_url = spout_param_get_url(param);
+		if (feed_url == NULL) {
+			fprintf(stderr, "source #%d: no url or bad json, skipped", source_id);
+			continue;
+		}
 
 		fetch_rc = fetch_feed(db, source_id, feed_url);
 
+		free(feed_url);
+		feed_url = NULL;
 		/* db_source_get_stmt return one row, no break */
 	}
 
