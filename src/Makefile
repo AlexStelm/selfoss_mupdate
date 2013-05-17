@@ -25,7 +25,7 @@ selfoss_mupdate: $(OBJS) $(LIBS_a)
 
 # for sanitize we deed internal headers from tidy
 sanitize.o: sanitize.c
-	$(CC) $(CFLAGS) -I$(TOP_DIR)/dl/libtidy/src -c -o $@ $<
+	$(CC) $(CFLAGS) -I$(TOP_DIR)/dl/tidy-html5/src -c -o $@ $<
 
 clean:
 	rm *.o selfoss_mupdate
