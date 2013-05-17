@@ -306,16 +306,17 @@ static char *spout_param_get_url(const char *param_string)
 	if (buf == NULL)
 		err(1, "out of memory");
 
-	sz = decode_html_entities_utf8(buf, param_string);
+	decode_html_entities_utf8(buf, param_string);
 	param_obj = json_tokener_parse(buf);
 	debug3("json obj: %s", json_object_to_json_string(param_obj));
 
-	if (json_object_object_get_ex(param_obj, "url", &o)) {
-		if ((sz = json_object_get_string_len(o)) > 0) {
-			memmove(buf, json_object_get_string(o), sz);
-			buf[sz] = '\0';
+	if ((o = json_object_object_get(param_obj, "url")) != NULL) {
+		if (json_object_get_type(o) == json_type_string) {
+			strncpy(buf, json_object_get_string(o), sz);
 			debug3("url: %s", buf);
 		}
+		else
+			sz = 0;
 	}
 	else
 		sz = 0;
