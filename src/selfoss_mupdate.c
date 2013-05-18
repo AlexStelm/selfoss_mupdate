@@ -259,12 +259,12 @@ static int fetch_feed(sqlite3 *db, int source_id, char *feed_url)
 
 		rc = sanitize_content(&rssitem->description);
 		if (rc > 1)
-			fprintf(stderr, "content sanitized with errors! item #%zu '%s' (rc=%d)",
+			fprintf(stderr, "content sanitized with errors! item #%zu '%s' (rc=%d)\n",
 					n, rssitem->title, rc);
 		else if (rc >= 0)
 			debug("sanitize ok #%zu '%s'", n, rssitem->title);
 		else {
-			fprintf(stderr, "content sanitization failed! skip item #%zu '%s'",
+			fprintf(stderr, "content sanitization failed! skip item #%zu '%s'\n",
 					n, rssitem->title);
 			continue;
 		}
@@ -424,7 +424,7 @@ int main(int argc, char *argv[])
 		if (feed_url == NULL)
 			feed_url = spout_param_get_url(param);
 		if (feed_url == NULL) {
-			fprintf(stderr, "source #%d: no url or bad json, skipped", source_id);
+			fprintf(stderr, "source #%d: no url or bad json, skipped\n", source_id);
 			continue;
 		}
 
