@@ -1,0 +1,13 @@
+EXPERIMENTAL updater for selfoss rss reader
+
+On ASUS RT-N16 (with tomato firmware, standard clock)
+
+root@rt-n16:/opt/srv/www/selfoss# time selfoss_mupdate $PWD/data/sqlite/selfoss.db
+40.82user 48.17system 1:52.76elapsed 78%CPU (0avgtext+0avgdata 0maxresident)
+
+mem usage (in htop): ~6 MiB (5%)
+
+root@al-76:/opt/srv/www/selfoss# time php-cli update.php
+53.95user 65.49system 2:16.16elapsed 87%CPU (0avgtext+0avgdata 0maxresident)
+
+mem usage (in htop): ~20 MiB (16%)
